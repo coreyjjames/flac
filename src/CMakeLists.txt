@@ -1,9 +1,7 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.11)
 
 option(ENABLE_64_BIT_WORDS "Set FLAC__BYTES_PER_WORD to 8 (4 is the default)" OFF)
 option(WITH_XMMS "Build XMMS plugin" OFF)
-
-check_include_file("iconv.h" HAVE_ICONV)
 
 add_subdirectory("libFLAC")
 if(BUILD_CXXLIBS)
@@ -18,7 +16,6 @@ if(WITH_XMMS)
     add_subdirectory("plugin_common")
     add_subdirectory("plugin_xmms")
 endif()
-
 if(BUILD_TESTING)
     add_subdirectory("test_libs_common")
     add_subdirectory("test_libFLAC")

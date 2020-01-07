@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.0)
-
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "[xX]86(_64)?|(AMD|amd)64|i[346]86")
     option(WITH_AVX "Enable AVX, AVX2 optimizations" ON)
 endif()
@@ -99,9 +97,7 @@ target_compile_definitions(FLAC
     PRIVATE $<$<BOOL:${BUILD_SHARED_LIBS}>:FLAC_API_EXPORTS>
     PUBLIC $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:FLAC__NO_DLL>)
 if(NOT WIN32)
-target_compile_definitions(FLAC
-    PRIVATE $<$<BOOL:${BUILD_SHARED_LIBS}>:FLAC__USE_VISIBILITY_ATTR>
-)
+    target_compile_definitions(FLAC PRIVATE $<$<BOOL:${BUILD_SHARED_LIBS}>:FLAC__USE_VISIBILITY_ATTR>)
 endif()
 target_include_directories(FLAC INTERFACE
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
@@ -114,11 +110,9 @@ if(BUILD_SHARED_LIBS)
     set_target_properties(FLAC PROPERTIES
         VERSION 8.3.0
         SOVERSION 8)
-if(NOT WIN32)
-    set_target_properties(FLAC PROPERTIES
-        C_VISIBILITY_PRESET hidden
-    )
-endif()
+    if(NOT WIN32)
+        set_target_properties(FLAC PROPERTIES C_VISIBILITY_PRESET hidden)
+    endif()
 endif()
 
 
@@ -127,4 +121,4 @@ install(TARGETS FLAC EXPORT targets
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}/")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/flac.pc"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/pkgconfig")
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")

@@ -69,7 +69,7 @@ AC_C_INLINE
 AC_C_VARARRAYS
 AC_C_TYPEOF
 
-AC_CHECK_HEADERS([stdint.h inttypes.h byteswap.h sys/param.h sys/ioctl.h termios.h x86intrin.h cpuid.h])
+AC_CHECK_HEADERS([stdint.h inttypes.h byteswap.h sys/param.h sys/ioctl.h termios.h x86intrin.h cpuid.h arm_neon.h])
 
 XIPH_C_BSWAP32
 XIPH_C_BSWAP16
@@ -156,6 +156,11 @@ case "$host_cpu" in
 		AH_TEMPLATE(FLAC__CPU_PPC, [define if building for PowerPC])
 		asm_optimisation=$asm_opt
 		;;
+	aarch64*)
+		cpu_aarch64=true
+		AC_DEFINE(FLAC__CPU_AARCH64)
+		AH_TEMPLATE(FLAC__CPU_AARCH64, [define if building for AARCH64])
+		;;
 	sparc)
 		cpu_sparc=true
 		AC_DEFINE(FLAC__CPU_SPARC)
@@ -167,12 +172,19 @@ AM_CONDITIONAL(FLAC__CPU_X86_64, test "x$cpu_x86_64" = xtrue)
 AM_CONDITIONAL(FLaC__CPU_IA32, test "x$cpu_ia32" = xtrue)
 AM_CONDITIONAL(FLaC__CPU_PPC, test "x$cpu_ppc" = xtrue)
 AM_CONDITIONAL(FLaC__CPU_PPC64, test "x$cpu_ppc64" = xtrue)
+AM_CONDITIONAL(FLAC__CPU_AARCH64, test "x$cpu_aarch64" = xtrue)
 AM_CONDITIONAL(FLaC__CPU_SPARC, test "x$cpu_sparc" = xtrue)
 
 if test "x$ac_cv_header_x86intrin_h" = xyes; then
 AC_DEFINE([FLAC__HAS_X86INTRIN], 1, [Set to 1 if <x86intrin.h> is available.])
 else
 AC_DEFINE([FLAC__HAS_X86INTRIN], 0)
+fi
+
+if test "x$ac_cv_header_arm_neon_h" = xyes; then
+AC_DEFINE([FLAC__HAS_NEONINTRIN], 1, [Set to 1 if <arm_neon.h> is available.])
+else
+AC_DEFINE([FLAC__HAS_NEONINTRIN], 0)
 fi
 
 if test x"$cpu_ppc64" = xtrue ; then
@@ -310,8 +322,10 @@ AC_SUBST(FLAC__TEST_LEVEL)
 AC_ARG_ENABLE(werror,
 	AC_HELP_STRING([--enable-werror], [Enable -Werror in all Makefiles]))
 
-AC_ARG_ENABLE(stack-smash-protection,
-	AC_HELP_STRING([--enable-stack-smash-protection], [Enable GNU GCC stack smash protection]))
+AC_ARG_ENABLE([stack-smash-protection],
+    [AS_HELP_STRING([--disable-stack-smash-protection],[Disable GNU GCC stack smash protection])],,
+    [AS_IF([test "$ac_cv_c_compiler_gnu" = "yes" && test "$os_is_windows" = "no"],
+        [enable_stack_smash_protection=yes],[enable_stack_smash_protection=no])])
 
 AC_ARG_ENABLE(64-bit-words,
 	AC_HELP_STRING([--enable-64-bit-words], [Set FLAC__BYTES_PER_WORD to 8 (4 is the default)]))
@@ -373,6 +387,32 @@ AC_HELP_STRING([--disable-cpplibs], [Do not build libFLAC++]),
 	*)   AC_MSG_ERROR(bad value ${enableval} for --enable-cpplibs) ;;
 esac], [disable_cpplibs=false])
 AM_CONDITIONAL(FLaC__WITH_CPPLIBS, [test "x$disable_cpplibs" != xtrue])
+
+AC_ARG_ENABLE([oss-fuzzers],
+  [AS_HELP_STRING([--enable-oss-fuzzers],
+    [Whether to generate the fuzzers for OSS-Fuzz (Clang only)])],
+  [have_oss_fuzzers=yes], [have_oss_fuzzers=no])
+
+if test "x$have_oss_fuzzers" = "xyes"; then
+  if test "x$xiph_cv_c_compiler_clang" = "xyes" ; then
+    AM_CONDITIONAL([USE_OSSFUZZERS], [test "x$have_oss_fuzzers" = "xyes"])
+    if test "x$LIB_FUZZING_ENGINE" = "x" ; then
+      # Only set this if it is empty.
+	  LIB_FUZZING_ENGINE=-fsanitize=fuzzer
+    fi
+  else
+    AM_CONDITIONAL([USE_OSSFUZZERS], [test "false" = "true"])
+    # Disable fuzzer if the compiler is not Clang.
+    AC_MSG_WARN([*** Ozz-Fuzz is disabled because that requres the  Clang compiler.])
+    have_oss_fuzzers="no (compiler is GCC)"
+  fi
+else
+  AM_CONDITIONAL([USE_OSSFUZZERS], [test "false" = "true"])
+fi
+
+AM_CONDITIONAL([USE_OSSFUZZ_FLAG], [test "x$LIB_FUZZING_ENGINE" = "x-fsanitize=fuzzer"])
+AM_CONDITIONAL([USE_OSSFUZZ_STATIC], [test -f "$LIB_FUZZING_ENGINE"])
+AC_SUBST([LIB_FUZZING_ENGINE])
 
 dnl check for ogg library
 AC_ARG_ENABLE([ogg],
@@ -576,7 +616,8 @@ AC_CONFIG_FILES([ \
 	test/metaflac-test-files/Makefile \
 	test/pictures/Makefile \
 	build/Makefile \
-	microbench/Makefile
+	microbench/Makefile \
+	oss-fuzz/Makefile
 ])
 AC_OUTPUT
 
@@ -585,19 +626,21 @@ AC_MSG_RESULT([
 
   Configuration summary :
 
-    FLAC version : ........................ ${VERSION}
+    FLAC version : ............................ ${VERSION}
 
-    Host CPU : ............................ ${host_cpu}
-    Host Vendor : ......................... ${host_vendor}
-    Host OS : ............................. ${host_os}
+    Host CPU : ................................ ${host_cpu}
+    Host Vendor : ............................. ${host_vendor}
+    Host OS : ................................. ${host_os}
 ])
 
-	echo "    Compiler is GCC : ..................... ${ac_cv_c_compiler_gnu}"
+	echo "    Compiler is GCC : ......................... ${ac_cv_c_compiler_gnu}"
 if test x$ac_cv_c_compiler_gnu = xyes ; then
-	echo "    GCC version : ......................... ${GCC_VERSION}"
+	echo "    GCC version : ............................. ${GCC_VERSION}"
 fi
-	echo "    Compiler is Clang : ................... ${xiph_cv_c_compiler_clang}"
-	echo "    SSE optimizations : ................... ${sse_os}"
-	echo "    Asm optimizations : ................... ${asm_optimisation}"
-	echo "    Ogg/FLAC support : .................... ${have_ogg}"
+	echo "    Compiler is Clang : ....................... ${xiph_cv_c_compiler_clang}"
+	echo "    SSE optimizations : ....................... ${sse_os}"
+	echo "    Asm optimizations : ....................... ${asm_optimisation}"
+	echo "    Ogg/FLAC support : ........................ ${have_ogg}"
+	echo "    Stack protector  : ........................ ${enable_stack_smash_protection}"
+	echo "    Fuzzing support (Clang only) : ............ ${have_oss_fuzzers}"
 echo
